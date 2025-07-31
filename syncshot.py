@@ -56,6 +56,9 @@ def generate_commit_message():
 
 def is_remote_ahead():
     subprocess.run(["git", "fetch"])
+    current_branch = subprocess.check_output(
+        ["git", "branch", "--show-current"], text=True
+    ).strip()
 
     return False
 
