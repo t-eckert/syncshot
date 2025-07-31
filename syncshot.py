@@ -71,11 +71,32 @@ def remote_status():
         check=True,
     )
 
-    print(result.stdout)
-    status = re.match("\\[*.\\]", result.stdout)
-    print(status)
+    lines = result.stdout.strip().split("\n")
+    if not lines:
+        return 0
+    branch_line = lines[0]
 
-    return ("ahead", 3)
+    # Look for [behind N], [ahead N], or [ahead N, behind M] patterns
+    if "[behind" in branch_line:
+        # Extract behind count: "## main...origin/main [behind 3]"
+        match = re.search(r"\[behind (\d+)", branch_line)
+        if match:
+            return int(match.group(1))
+
+    elif "[ahead" in branch_line and "behind" not in branch_line:
+        # Extract ahead count: "## main...origin/main [ahead 2]"
+        match = re.search(r"\[ahead (\d+)", branch_line)
+        if match:
+            return -int(match.group(1))
+
+    elif "[ahead" in branch_line and "behind" in branch_line:
+        # Handle diverged case: "## main...origin/main [ahead 1, behind 2]"
+        behind_match = re.search(r"behind (\d+)", branch_line)
+        if behind_match:
+            return int(behind_match.group(1))
+
+    # No ahead/behind info means in sync
+    return 0
 
 
 if __name__ == "__main__":
