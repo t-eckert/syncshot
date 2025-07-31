@@ -55,6 +55,8 @@ def generate_commit_message():
 
 
 def is_remote_ahead():
+    subprocess.run(["git", "fetch"])
+
     return False
 
 
