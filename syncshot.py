@@ -78,6 +78,16 @@ def is_remote_ahead():
 
     print(result)
 
+    behind, ahead = result.stdout.strip().split("\t")
+
+    data = {
+        "remote_ahead": int(behind) > 0,
+        "local_ahead": int(ahead) > 0,
+        "behind_count": int(behind),
+        "ahead_count": int(ahead),
+    }
+    print(data)
+
     return False
 
 
