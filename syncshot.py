@@ -11,6 +11,9 @@ def main():
         stage_local_changes()
         commit_local_changes()
 
+    remote = is_remote_ahead()
+    logging.debug(remote)
+
 
 def is_local_dirty() -> bool:
     """
@@ -49,6 +52,10 @@ def commit_local_changes():
 def generate_commit_message():
     iso_now = datetime.now(timezone.utc).isoformat()
     return iso_now
+
+
+def is_remote_ahead():
+    return False
 
 
 if __name__ == "__main__":
