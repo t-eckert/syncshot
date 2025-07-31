@@ -64,13 +64,7 @@ def remote_status():
     print(current_branch)
 
     result = subprocess.run(
-        [
-            "git",
-            "rev-list",
-            "--count",
-            "--left-right",
-            f"HEAD...origin/{current_branch}",
-        ],
+        ["git", "status", "-b", "--porcelain=v1"],
         capture_output=True,
         text=True,
         check=True,
