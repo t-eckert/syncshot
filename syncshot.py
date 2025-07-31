@@ -15,6 +15,9 @@ def main():
     remote = remote_status()
     logging.debug(remote)
 
+    if remote < 0:  # Local is ahead.
+        push()
+
 
 def is_local_dirty():
     """
@@ -97,6 +100,11 @@ def remote_status():
 
     # No ahead/behind info means in sync
     return 0
+
+
+def push():
+    logging.debug("Pushing!")
+    subprocess.run(["git", "push"], check=True)
 
 
 if __name__ == "__main__":
