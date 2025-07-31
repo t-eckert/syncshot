@@ -7,11 +7,8 @@ from datetime import datetime, timezone
 def main():
     logging.info("Syncshot is running")
 
-    logging.debug("Local has unstaged changes")
     stage_local_changes()
-    logging.debug("Committing local changes")
     commit_local_changes()
-    logging.debug("Local changes committed")
 
 
 def is_local_dirty() -> bool:
@@ -42,9 +39,13 @@ def commit_local_changes():
     Commit with timestamp
     """
 
+    logging.debug("Committing local changes")
+
     message = generate_commit_message()
 
     subprocess.run(["git", "commit", "-m", message], capture_output=False, check=True)
+
+    logging.debug("Local changes committed")
 
 
 def generate_commit_message():
