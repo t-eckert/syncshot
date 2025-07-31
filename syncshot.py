@@ -72,8 +72,6 @@ def remote_status():
 
     print(result)
 
-    behind, ahead = result.stdout.strip().split("\t")
-
     return ("ahead", 3)
 
 
