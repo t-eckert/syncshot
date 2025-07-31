@@ -40,10 +40,8 @@ def commit_local_changes():
     """
 
     logging.debug("Committing local changes")
-
     message = generate_commit_message()
     subprocess.run(["git", "commit", "-m", message], capture_output=False, check=True)
-
     logging.debug("Local changes committed")
 
 
