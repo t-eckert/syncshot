@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 def main():
     logging.info("Syncshot is running")
 
-    period = 30_000
+    period = 30
 
     while True:
         while is_local_dirty():
