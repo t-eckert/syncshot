@@ -8,9 +8,7 @@ def main():
     logging.info("Syncshot is running")
 
     logging.debug("Local has unstaged changes")
-    logging.debug("Staging local changes")
     stage_local_changes()
-    logging.debug("Local changes staged")
     logging.debug("Committing local changes")
     commit_local_changes()
     logging.debug("Local changes committed")
@@ -34,7 +32,9 @@ def stage_local_changes():
     Stage everything.
     """
 
+    logging.debug("Staging local changes")
     subprocess.run(["git", "add", "."], capture_output=False, check=True)
+    logging.debug("Local changes staged")
 
 
 def commit_local_changes():
