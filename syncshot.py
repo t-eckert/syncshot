@@ -76,6 +76,8 @@ def is_remote_ahead():
         check=True,
     )
 
+    print(result)
+
     return False
 
 
