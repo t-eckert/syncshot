@@ -11,7 +11,7 @@ def main():
         stage_local_changes()
         commit_local_changes()
 
-    remote = is_remote_ahead()
+    remote = remote_status()
     logging.debug(remote)
 
 
@@ -54,7 +54,7 @@ def generate_commit_message():
     return iso_now
 
 
-def is_remote_ahead():
+def remote_status():
     subprocess.run(["git", "fetch"])
     current_branch = subprocess.check_output(
         ["git", "branch", "--show-current"], text=True
