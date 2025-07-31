@@ -1,6 +1,7 @@
 import subprocess
 import logging
 import re
+import time
 
 from datetime import datetime, timezone
 
@@ -8,15 +9,25 @@ from datetime import datetime, timezone
 def main():
     logging.info("Syncshot is running")
 
-    while is_local_dirty():
-        stage_local_changes()
-        commit_local_changes()
+    period = 30_000
 
-    remote = remote_status()
-    logging.debug(remote)
+    while True:
+        while is_local_dirty():
+            stage_local_changes()
+            commit_local_changes()
 
-    if remote < 0:  # Local is ahead.
-        push()
+        remote = remote_status()
+        logging.debug(remote)
+
+        if remote < 0:  # Local is ahead.
+            push()
+        elif remote > 0:  # Remote is ahead.
+            pull()
+        else:
+            logging.debug("In sync")
+
+        logging.debug(f"Sleeping {period}")
+        time.sleep(period)
 
 
 def is_local_dirty():
@@ -105,6 +116,11 @@ def remote_status():
 def push():
     logging.debug("Pushing!")
     subprocess.run(["git", "push"], capture_output=True, check=True)
+
+
+def pull():
+    logging.debug("Pulling")
+    subprocess.run(["git", "pull", "--rebase=True"])
 
 
 if __name__ == "__main__":
