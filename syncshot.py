@@ -80,15 +80,12 @@ def remote_status():
 
     behind, ahead = result.stdout.strip().split("\t")
 
-    data = {
+    return {
         "remote_ahead": int(behind) > 0,
         "local_ahead": int(ahead) > 0,
         "behind_count": int(behind),
         "ahead_count": int(ahead),
     }
-    print(data)
-
-    return False
 
 
 if __name__ == "__main__":
