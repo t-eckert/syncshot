@@ -15,7 +15,7 @@ def main():
     logging.debug(remote)
 
 
-def is_local_dirty() -> bool:
+def is_local_dirty():
     """
     This will return True if git status has unstaged changes.
     It will return False if all changes have been staged
@@ -80,12 +80,7 @@ def remote_status():
 
     behind, ahead = result.stdout.strip().split("\t")
 
-    return {
-        "remote_ahead": int(behind) > 0,
-        "local_ahead": int(ahead) > 0,
-        "behind_count": int(behind),
-        "ahead_count": int(ahead),
-    }
+    return ("ahead", 3)
 
 
 if __name__ == "__main__":
