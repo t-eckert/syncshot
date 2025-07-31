@@ -70,7 +70,7 @@ def remote_status():
         check=True,
     )
 
-    print(result)
+    print(result.stdout)
 
     return ("ahead", 3)
 
