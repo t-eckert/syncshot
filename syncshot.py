@@ -1,7 +1,7 @@
 import subprocess
 import logging
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 
 def main():
@@ -48,7 +48,7 @@ def commit_local_changes():
 
 
 def generate_commit_message():
-    iso_now = datetime.now().isoformat()
+    iso_now = datetime.now(timezone.utc).isoformat()
     return iso_now
 
 
