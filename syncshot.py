@@ -7,8 +7,9 @@ from datetime import datetime, timezone
 def main():
     logging.info("Syncshot is running")
 
-    stage_local_changes()
-    commit_local_changes()
+    while is_local_dirty():
+        stage_local_changes()
+        commit_local_changes()
 
 
 def is_local_dirty() -> bool:
