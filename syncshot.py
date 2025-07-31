@@ -72,6 +72,8 @@ def remote_status():
     )
 
     print(result.stdout)
+    status = re.match("", result.stdout)
+    print(status)
 
     return ("ahead", 3)
 
