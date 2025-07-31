@@ -60,6 +60,7 @@ def is_remote_ahead():
         ["git", "branch", "--show-current"], text=True
     ).strip()
 
+    logging.debug(f"Current branch:{current_branch}")
     print(current_branch)
 
     return False
