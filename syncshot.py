@@ -63,6 +63,19 @@ def is_remote_ahead():
     logging.debug(f"Current branch:{current_branch}")
     print(current_branch)
 
+    result = subprocess.run(
+        [
+            "git",
+            "rev-list",
+            "--count",
+            "--left-right",
+            f"HEAD...origin/{current_branch}",
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+
     return False
 
 
