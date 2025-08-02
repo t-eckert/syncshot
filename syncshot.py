@@ -161,6 +161,16 @@ if __name__ == "__main__":
         default=10,
         help="Time in seconds between sync attempts (default: 10)",
     )
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Enable debug logging",
+    )
+    args = parser.parse_args()
+    period = args.period
+    if period <= 0:
+        logging.error("Period must be a positive integer")
+        exit(1)
 
     logging.basicConfig(level=logging.DEBUG)
     main()
