@@ -146,5 +146,10 @@ def pull():
 
 
 if __name__ == "__main__":
+    """
+    Main entry point for the script.
+    Processes arguments and starts the sync process by calling `main`.
+    """
+
     logging.basicConfig(level=logging.DEBUG)
     main()
