@@ -75,14 +75,9 @@ def commit_local_changes():
     """
 
     logging.debug("Committing local changes")
-    message = generate_commit_message()
+    message = datetime.now(timezone.utc).isoformat()
     subprocess.run(["git", "commit", "-m", message], capture_output=False, check=True)
     logging.debug("Local changes committed")
-
-
-def generate_commit_message():
-    iso_now = datetime.now(timezone.utc).isoformat()
-    return iso_now
 
 
 def remote_status():
