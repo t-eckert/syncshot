@@ -126,12 +126,20 @@ def remote_status():
 
 
 def push():
+    """
+    Push local changes to remote.
+    """
+
     logging.debug("Pushing to remote")
     subprocess.run(["git", "push"], capture_output=True, check=True)
     logging.debug("Push completed")
 
 
 def pull():
+    """
+    Pull changes from remote and rebase.
+    """
+
     logging.debug("Pulling from remote")
     subprocess.run(["git", "pull", "--rebase=True"])
     logging.debug("Pull completed")
