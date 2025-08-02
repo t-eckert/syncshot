@@ -117,9 +117,11 @@ def remote_status():
         # Handle diverged case: "## main...origin/main [ahead 1, behind 2]"
         behind_match = re.search(r"behind (\d+)", branch_line)
         if behind_match:
+            logging.debug(f"Local is ahead by {behind_match.group(1)} commits")
             return int(behind_match.group(1))
 
     # No ahead/behind info means in sync
+    logging.debug("Local is in sync with remote")
     return 0
 
 
