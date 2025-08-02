@@ -131,7 +131,7 @@ def push():
 
 
 def pull():
-    logging.debug("Pulling")
+    logging.debug("Pulling from remote")
     subprocess.run(["git", "pull", "--rebase=True"])
 
 
