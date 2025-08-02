@@ -81,6 +81,11 @@ def commit_local_changes():
 
 
 def remote_status():
+    """
+    Comprare local branch to remote branch to see if local is ahead or behind.
+    """
+
+    logging.debug("Checking remote status")
     subprocess.run(["git", "fetch"])
     current_branch = subprocess.check_output(
         ["git", "branch", "--show-current"], text=True
