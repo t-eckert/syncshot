@@ -8,7 +8,6 @@ from datetime import datetime, timezone
 
 def main(period=10):
     logging.info("Syncshot is running")
-
     while True:
         logging.info("Syncing...")
         sync()
