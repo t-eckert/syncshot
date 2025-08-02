@@ -30,8 +30,6 @@ def sync():
         commit_local_changes()
 
     remote = remote_status()
-    logging.debug(remote)
-
     if remote < 0:  # Local is ahead.
         push()
     elif remote > 0:  # Remote is ahead.
