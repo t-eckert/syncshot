@@ -7,7 +7,7 @@ import argparse
 from datetime import datetime, timezone
 
 
-def main(period=10):
+def main(period):
     logging.info("Syncshot is running")
     while True:
         logging.info("Syncing...")
