@@ -87,13 +87,6 @@ def remote_status():
 
     logging.debug("Checking remote status")
     subprocess.run(["git", "fetch"])
-    current_branch = subprocess.check_output(
-        ["git", "branch", "--show-current"], text=True
-    ).strip()
-
-    logging.debug(f"Current branch:{current_branch}")
-    print(current_branch)
-
     result = subprocess.run(
         ["git", "status", "-b", "--porcelain=v1"],
         capture_output=True,
