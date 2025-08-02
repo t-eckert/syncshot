@@ -126,7 +126,7 @@ def remote_status():
 
 
 def push():
-    logging.debug("Pushing!")
+    logging.debug("Pushing to remote")
     subprocess.run(["git", "push"], capture_output=True, check=True)
 
 
