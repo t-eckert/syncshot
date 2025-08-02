@@ -13,7 +13,6 @@ def main():
     period = 10
 
     while True:
-
         logging.debug(f"Sleeping {period}")
         time.sleep(period)
 
@@ -27,20 +26,19 @@ def sync():
         If local is behind remote, pull and rebase changes.
     """
 
-        while is_local_dirty():
-            stage_local_changes()
-            commit_local_changes()
+    while is_local_dirty():
+        stage_local_changes()
+        commit_local_changes()
 
-        remote = remote_status()
-        logging.debug(remote)
+    remote = remote_status()
+    logging.debug(remote)
 
-        if remote < 0:  # Local is ahead.
-            push()
-        elif remote > 0:  # Remote is ahead.
-            pull()
-        else:
-            logging.debug("In sync")
-
+    if remote < 0:  # Local is ahead.
+        push()
+    elif remote > 0:  # Remote is ahead.
+        pull()
+    else:
+        logging.debug("In sync")
 
 
 def is_local_dirty():
