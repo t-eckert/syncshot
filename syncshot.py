@@ -103,12 +103,14 @@ def remote_status():
         # Extract behind count: "## main...origin/main [behind 3]"
         match = re.search(r"\[behind (\d+)", branch_line)
         if match:
+            logging.debug(f"Local is behind by {match.group(1)} commits")
             return int(match.group(1))
 
     elif "[ahead" in branch_line and "behind" not in branch_line:
         # Extract ahead count: "## main...origin/main [ahead 2]"
         match = re.search(r"\[ahead (\d+)", branch_line)
         if match:
+            logging.debug(f"Local is ahead by {match.group(1)} commits")
             return -int(match.group(1))
 
     elif "[ahead" in branch_line and "behind" in branch_line:
