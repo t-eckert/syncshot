@@ -10,6 +10,7 @@ def main(period=10):
     logging.info("Syncshot is running")
 
     while True:
+        logging.info("Syncing")
         sync()
         logging.debug(f"Sleeping {period}")
         time.sleep(period)
