@@ -93,7 +93,6 @@ def remote_status():
         text=True,
         check=True,
     )
-
     lines = result.stdout.strip().split("\n")
     if not lines:
         return 0
