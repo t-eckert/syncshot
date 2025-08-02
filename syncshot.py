@@ -6,10 +6,8 @@ import time
 from datetime import datetime, timezone
 
 
-def main():
+def main(period=10):
     logging.info("Syncshot is running")
-
-    period = 10
 
     while True:
         logging.debug(f"Sleeping {period}")
