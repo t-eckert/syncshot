@@ -71,7 +71,7 @@ def stage_local_changes():
 
 def commit_local_changes():
     """
-    Commit with timestamp
+    Commit with timestamp as the message.
     """
 
     logging.debug("Committing local changes")
