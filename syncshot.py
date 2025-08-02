@@ -168,6 +168,10 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
     period = args.period
+    if args.debug:
+        logging.basicConfig(level=logging.DEBUG)
+    else:
+        logging.basicConfig(level=logging.INFO)
     if period <= 0:
         logging.error("Period must be a positive integer")
         exit(1)
