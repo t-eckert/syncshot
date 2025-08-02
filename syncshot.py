@@ -152,5 +152,15 @@ if __name__ == "__main__":
     Processes arguments and starts the sync process by calling `main`.
     """
 
+    parser = argparse.ArgumentParser(
+        description="Syncshot: Keep your git repository in sync."
+    )
+    parser.add_argument(
+        "--period",
+        type=int,
+        default=10,
+        help="Time in seconds between sync attempts (default: 10)",
+    )
+
     logging.basicConfig(level=logging.DEBUG)
     main()
