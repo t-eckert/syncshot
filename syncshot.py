@@ -86,7 +86,7 @@ def remote_status():
     """
 
     logging.debug("Checking remote status")
-    subprocess.run(["git", "fetch"])
+    subprocess.run(["git", "fetch"], check=True)
     result = subprocess.run(
         ["git", "status", "-b", "--porcelain=v1"],
         capture_output=True,
