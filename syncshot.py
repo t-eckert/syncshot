@@ -13,6 +13,20 @@ def main():
     period = 10
 
     while True:
+
+        logging.debug(f"Sleeping {period}")
+        time.sleep(period)
+
+
+def sync():
+    """
+    Stage any local changes that exist.
+    Commit them with the current time.
+    Check if local is behind remote.
+        If local is ahead of remote, push changes.
+        If local is behind remote, pull and rebase changes.
+    """
+
         while is_local_dirty():
             stage_local_changes()
             commit_local_changes()
@@ -27,8 +41,6 @@ def main():
         else:
             logging.debug("In sync")
 
-        logging.debug(f"Sleeping {period}")
-        time.sleep(period)
 
 
 def is_local_dirty():
