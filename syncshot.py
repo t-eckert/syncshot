@@ -41,12 +41,14 @@ def sync():
 def is_local_dirty():
     """
     This will return True if git status has unstaged changes.
-    It will return False if all changes have been staged.
+    It will return False if all changes have been staged and committed.
     """
 
+    logging.debug("Checking if local is dirty")
     result = subprocess.run(
         ["git", "status", "--porcelain"], capture_output=True, text=True, check=True
     )
+    logging.debug(f"Git status output: {result.stdout.strip()}")
 
     return bool(result.stdout.strip())
 
