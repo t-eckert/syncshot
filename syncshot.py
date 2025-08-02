@@ -55,7 +55,7 @@ def is_local_dirty():
 
 def stage_local_changes():
     """
-    Stage everything.
+    Stage everything local.
     """
 
     logging.debug("Staging local changes")
