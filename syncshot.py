@@ -10,7 +10,13 @@ def main(period=10):
     logging.info("Syncshot is running")
     while True:
         logging.info("Syncing...")
-        sync()
+        try:
+            sync()
+        except subprocess.CalledProcessError as e:
+            logging.error(f"An error occurred while syncing: {e}")
+            logging.debug(f"Command output: {e.output}")
+            logging.debug(f"Command stderr: {e.stderr}")
+            logging.debug("Continuing to next sync attempt")
         logging.info("Done")
         logging.debug(f"Sleeping {period}")
         time.sleep(period)
@@ -55,7 +61,7 @@ def is_local_dirty():
 
 def stage_local_changes():
     """
-    Stage everything local.
+    Stage everything.
     """
 
     logging.debug("Staging local changes")
