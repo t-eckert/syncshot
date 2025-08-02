@@ -176,5 +176,4 @@ if __name__ == "__main__":
         logging.error("Period must be a positive integer")
         exit(1)
 
-    logging.basicConfig(level=logging.DEBUG)
-    main()
+    main(period)
