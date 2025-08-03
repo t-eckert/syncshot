@@ -96,9 +96,7 @@ def is_local_dirty():
 
 
 def stage_local_changes():
-    """
-    Stage everything.
-    """
+    """Stage everything."""
 
     logging.debug("Staging local changes")
     subprocess.run(["git", "add", "."], capture_output=False, check=True)
