@@ -33,7 +33,7 @@ def main(period):
 
         sleep_remaining = period
         while sleep_remaining > 0 and not shutdown_requested:
-            sleep_time = min(1, sleep_remaining)  # Sleep in 1-second increments
+            sleep_time = min(1, sleep_remaining)
             time.sleep(sleep_time)
             sleep_remaining -= sleep_time
 
