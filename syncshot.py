@@ -164,9 +164,7 @@ def push():
 
 
 def pull():
-    """
-    Pull changes from remote and rebase.
-    """
+    """Pull changes from remote and rebase."""
 
     logging.debug("Pulling from remote")
     subprocess.run(["git", "pull", "--rebase=True"])
