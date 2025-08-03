@@ -4,31 +4,35 @@ import re
 import time
 import argparse
 import signal
-import sys
 
 from datetime import datetime, timezone
 
 # Global flag for graceful shutdown
 shutdown_requested = False
 
+
 def signal_handler(signum, frame):
     """Handle interrupt signals gracefully"""
     global shutdown_requested
     signal_name = signal.Signals(signum).name
-    logging.info(f"Received {signal_name}. Finishing current sync and shutting down gracefully...")
+    logging.info(
+        f"Received {signal_name}. Finishing current sync and shutting down gracefully..."
+    )
     shutdown_requested = True
+
 
 def setup_signal_handlers():
     """Set up signal handlers for graceful shutdown"""
-    signal.signal(signal.SIGINT, signal_handler)   # CTRL+C
+    signal.signal(signal.SIGINT, signal_handler)  # CTRL+C
     signal.signal(signal.SIGTERM, signal_handler)  # Termination signal
-    if hasattr(signal, 'SIGHUP'):
-        signal.signal(signal.SIGHUP, signal_handler)   # Hangup signal
+    if hasattr(signal, "SIGHUP"):
+        signal.signal(signal.SIGHUP, signal_handler)  # Hangup signal
+
 
 def main(period):
     setup_signal_handlers()
     logging.info("Syncshot is running")
-    
+
     while not shutdown_requested:
         logging.info("Syncing...")
         try:
@@ -38,20 +42,20 @@ def main(period):
             logging.debug(f"Command output: {e.output}")
             logging.debug(f"Command stderr: {e.stderr}")
             logging.debug("Continuing to next sync attempt")
-        
+
         if shutdown_requested:
             break
-            
+
         logging.info("Done")
         logging.debug(f"Sleeping {period}")
-        
+
         # Sleep in smaller increments to check for shutdown more frequently
         sleep_remaining = period
         while sleep_remaining > 0 and not shutdown_requested:
             sleep_time = min(1, sleep_remaining)  # Sleep in 1-second increments
             time.sleep(sleep_time)
             sleep_remaining -= sleep_time
-    
+
     logging.info("Syncshot shutting down gracefully")
 
 
