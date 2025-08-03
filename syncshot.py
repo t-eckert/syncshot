@@ -104,9 +104,7 @@ def stage_local_changes():
 
 
 def commit_local_changes():
-    """
-    Commit with timestamp as the message.
-    """
+    """Commit with timestamp as the message."""
 
     logging.debug("Committing local changes")
     message = datetime.now(timezone.utc).isoformat()
@@ -115,9 +113,7 @@ def commit_local_changes():
 
 
 def remote_status():
-    """
-    Comprare local branch to remote branch to see if local is ahead or behind.
-    """
+    """Comprare local branch to remote branch to see if local is ahead or behind."""
 
     logging.debug("Checking remote status")
     subprocess.run(["git", "fetch"], check=True)
