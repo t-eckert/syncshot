@@ -11,24 +11,6 @@ from datetime import datetime, timezone
 shutdown_requested = False
 
 
-def signal_handler(signum, _):
-    """Handle interrupt signals gracefully"""
-    global shutdown_requested
-    signal_name = signal.Signals(signum).name
-    logging.info(
-        f"Received {signal_name}. Finishing current sync and shutting down gracefully..."
-    )
-    shutdown_requested = True
-
-
-def setup_signal_handlers():
-    """Set up signal handlers for graceful shutdown"""
-    signal.signal(signal.SIGINT, signal_handler)  # CTRL+C
-    signal.signal(signal.SIGTERM, signal_handler)  # Termination signal
-    if hasattr(signal, "SIGHUP"):
-        signal.signal(signal.SIGHUP, signal_handler)  # Hangup signal
-
-
 def main(period):
     setup_signal_handlers()
     logging.info("Syncshot is running")
@@ -57,6 +39,24 @@ def main(period):
             sleep_remaining -= sleep_time
 
     logging.info("Syncshot shutting down gracefully")
+
+
+def signal_handler(signum, _):
+    """Handle interrupt signals gracefully"""
+    global shutdown_requested
+    signal_name = signal.Signals(signum).name
+    logging.info(
+        f"Received {signal_name}. Finishing current sync and shutting down gracefully..."
+    )
+    shutdown_requested = True
+
+
+def setup_signal_handlers():
+    """Set up signal handlers for graceful shutdown"""
+    signal.signal(signal.SIGINT, signal_handler)  # CTRL+C
+    signal.signal(signal.SIGTERM, signal_handler)  # Termination signal
+    if hasattr(signal, "SIGHUP"):
+        signal.signal(signal.SIGHUP, signal_handler)  # Hangup signal
 
 
 def sync():
