@@ -8,8 +8,16 @@ This repository is synced using the tool itself. The tool is complete. It runs u
 
 ## Running Syncshot
 
-Syncshot is a single file script, so you can just run it by grabbing the file from GitHub.
+Syncshot is a single file script, so you can run it by grabbing the file from GitHub.
 
 ```sh
 curl https://raw.githubusercontent.com/t-eckert/syncshot/refs/heads/main/syncshot.py | python3 
 ```
+
+If you clone it down first, call the script using Python from whatever directory you are working in.
+
+```sh
+python3 /path/to/syncshot.py
+```
+
+
