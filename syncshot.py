@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 shutdown_requested = False
 
 
-def signal_handler(signum, frame):
+def signal_handler(signum, _):
     """Handle interrupt signals gracefully"""
     global shutdown_requested
     signal_name = signal.Signals(signum).name
