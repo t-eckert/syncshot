@@ -156,9 +156,7 @@ def remote_status():
 
 
 def push():
-    """
-    Push local changes to remote.
-    """
+    """Push local changes to remote."""
 
     logging.debug("Pushing to remote")
     subprocess.run(["git", "push"], capture_output=True, check=True)
