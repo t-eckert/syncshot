@@ -42,6 +42,7 @@ def main(period):
 
 def signal_handler(signum, _):
     """Handle interrupt signals gracefully"""
+
     global shutdown_requested
     signal_name = signal.Signals(signum).name
     logging.info(
@@ -52,6 +53,7 @@ def signal_handler(signum, _):
 
 def setup_signal_handlers():
     """Set up signal handlers for graceful shutdown"""
+
     signal.signal(signal.SIGINT, signal_handler)  # CTRL+C
     signal.signal(signal.SIGTERM, signal_handler)  # Termination signal
     if hasattr(signal, "SIGHUP"):
