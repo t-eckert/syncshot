@@ -20,4 +20,7 @@ If you clone it down first, call the script using Python from whatever directory
 python3 /path/to/syncshot.py
 ```
 
+Syncshot accepts the following flags:
 
+- `--period [int]`: A positive integer representing the number of seconds between sync attempts.
+- `--debug`: Turns on debug logging.
