@@ -24,3 +24,7 @@ Syncshot accepts the following flags:
 
 - `--period [int]`: A positive integer representing the number of seconds between sync attempts.
 - `--debug`: Turns on debug logging.
+
+By default the period is 10 seconds and debug logging is turned off.
+
+
