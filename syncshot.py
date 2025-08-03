@@ -31,7 +31,6 @@ def main(period):
         logging.info("Done")
         logging.debug(f"Sleeping {period}")
 
-        # Sleep in smaller increments to check for shutdown more frequently
         sleep_remaining = period
         while sleep_remaining > 0 and not shutdown_requested:
             sleep_time = min(1, sleep_remaining)  # Sleep in 1-second increments
