@@ -47,4 +47,16 @@ Two properties are deliberate.
 
 Because the leases live in the git dir, `git add .` can never stage them.
 
+### Holding for one command
+
+When you know the command, `hold` is better than guessing a duration. It pauses for exactly as long as the command runs and releases afterwards, including when the command fails or you interrupt it.
+
+```sh
+python3 syncshot.py hold -- git mv Projects/Thing Fields/Thing/Projects
+```
+
+The exit status is the command's own, so `hold` drops into a script without changing its behaviour. Under the hood it takes a short lease and renews it while the command runs, so a long command stays paused while one that is killed outright stops blocking syncing within half a minute. That renewal is also why `hold` is not subject to the one hour cap: a process still renewing is demonstrably alive, which is what the cap is there to check.
+
+Use `pause` when there is no single command to wrap, such as an agent making a change across many steps.
+
 

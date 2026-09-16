@@ -2,6 +2,7 @@ import subprocess
 import logging
 import re
 import os
+import math
 import time
 import getpass
 import argparse
@@ -23,6 +24,10 @@ PAUSE_DIR_NAME = "syncshot-pause.d"
 # lease expires and no single one can last longer than this.
 DEFAULT_PAUSE_SECONDS = 300
 MAX_PAUSE_SECONDS = 3600
+
+# `hold` renews a short lease while its command runs, so a holder that is killed
+# outright stops blocking syncing within this many seconds instead of lingering.
+HOLD_LEASE_SECONDS = 30
 
 
 def main(period):
@@ -186,7 +191,11 @@ def active_leases():
 
 
 def acquire_lease(seconds, owner=None):
-    """Take a pause lease, replacing any this owner already holds."""
+    """Take a pause lease, replacing any this owner already holds.
+
+    Also serves as the renewal for `hold`: calling it again extends the deadline
+    without ever leaving this owner holding nothing.
+    """
 
     owner = resolve_owner(owner)
     if seconds > MAX_PAUSE_SECONDS:
@@ -195,10 +204,20 @@ def acquire_lease(seconds, owner=None):
 
     directory = pause_dir()
     directory.mkdir(exist_ok=True)
-    release_lease(owner, announce=False)
 
-    deadline = int(time.time()) + seconds
-    (directory / f"{deadline}.{owner}").touch()
+    # Write the new lease before dropping the old one. Doing it the other way
+    # round leaves a window where this owner holds nothing, and a tick landing
+    # in that window would sync mid-change. This is what makes renewal safe.
+    # Round the deadline up. Truncating would make the lease live up to a second
+    # less than asked for, which eats the margin `hold` renews inside of.
+    deadline = math.ceil(time.time()) + seconds
+    lease = directory / f"{deadline}.{owner}"
+    lease.touch()
+
+    for entry in directory.iterdir():
+        _, _, entry_owner = entry.name.partition(".")
+        if entry_owner == owner and entry != lease:
+            entry.unlink(missing_ok=True)
 
     return deadline, owner, seconds
 
@@ -227,6 +246,55 @@ def release_lease(owner=None, release_all=False, announce=True):
             print(f"No leases held by {owner}. Use --all to release every holder.")
 
     return removed
+
+
+def run_held(command, owner=None):
+    """
+    Run a command with syncing paused for exactly as long as it takes.
+
+    The lease is short and renewed while the command runs, so the pause lasts as
+    long as needed but a holder that dies stops blocking syncing almost at once.
+    Renewal is why this is not subject to MAX_PAUSE_SECONDS: a process that keeps
+    renewing is demonstrably alive, which is the thing the cap exists to check.
+    """
+
+    owner = resolve_owner(owner)
+    acquire_lease(HOLD_LEASE_SECONDS, owner)
+    renew_every = max(1, HOLD_LEASE_SECONDS // 3)
+    print(f"Paused while running: {' '.join(command)}")
+
+    process = None
+    try:
+        process = subprocess.Popen(command)
+        last_renewal = time.time()
+        while process.poll() is None:
+            time.sleep(0.2)
+            if time.time() - last_renewal >= renew_every:
+                acquire_lease(HOLD_LEASE_SECONDS, owner)
+                last_renewal = time.time()
+                logging.debug(f"Renewed lease for {owner}")
+    except KeyboardInterrupt:
+        # The child is in this process group and got the interrupt too; wait for
+        # it so the lease is not released while it is still writing files.
+        logging.info("Interrupted, waiting for the command to stop")
+        if process is not None:
+            process.wait()
+    except FileNotFoundError:
+        logging.error(f"Could not run '{command[0]}': no such command")
+        return 127
+    finally:
+        release_lease(owner, announce=False)
+
+    returncode = process.returncode if process is not None else 1
+    if returncode < 0:
+        # Popen reports a signal death as -N; shells report it as 128+N, and the
+        # exit status of this script is what a caller will actually see.
+        returncode = 128 - returncode
+        print(f"Resumed. Command was killed by signal {returncode - 128}.")
+    else:
+        print(f"Resumed. Command exited {returncode}.")
+
+    return returncode
 
 
 def print_status():
@@ -418,6 +486,19 @@ def build_parser():
         "--all", action="store_true", help="Release every holder's lease, not just yours"
     )
 
+    hold = subparsers.add_parser(
+        "hold", help="Run a command with syncing paused for exactly as long as it takes"
+    )
+    hold.add_argument("--owner", help="Name this lease (default: $SYNCSHOT_OWNER)")
+    # Not "command": that is the subparser's own dest, and a positional of the
+    # same name silently overwrites which subcommand was chosen.
+    hold.add_argument(
+        "argv",
+        metavar="command",
+        nargs=argparse.REMAINDER,
+        help="-- followed by the command to run",
+    )
+
     subparsers.add_parser("status", help="Show whether syncing is paused, and by whom")
 
     return parser
@@ -449,6 +530,14 @@ if __name__ == "__main__":
         print(f"Paused for {seconds}s, until {clock} (held by {owner}).")
     elif command == "resume":
         release_lease(args.owner, release_all=args.all)
+    elif command == "hold":
+        argv = args.argv
+        if argv and argv[0] == "--":
+            argv = argv[1:]
+        if not argv:
+            logging.error("Nothing to run. Try: syncshot.py hold -- git mv a b")
+            exit(1)
+        exit(run_held(argv, args.owner))
     elif command == "status":
         print_status()
     else:
