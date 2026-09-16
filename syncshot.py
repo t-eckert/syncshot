@@ -6,6 +6,7 @@ import argparse
 import signal
 
 from datetime import datetime, timezone
+from pathlib import Path
 
 # Global flag for graceful shutdown
 shutdown_requested = False
@@ -67,7 +68,19 @@ def sync():
     Check if local is behind remote.
         If local is ahead of remote, push changes.
         If local is behind remote, pull and rebase changes.
+
+    Does nothing at all while a rebase, merge, cherry-pick or revert is in
+    progress, because staging then would commit conflict markers.
     """
+
+    operation = in_progress_operation()
+    if operation is not None:
+        logging.error(
+            f"A {operation} is in progress, so this sync was skipped. "
+            "Staging now would commit conflict markers. Resolve it by hand "
+            "and syncshot will pick up again on its own."
+        )
+        return
 
     while is_local_dirty():
         stage_local_changes()
@@ -80,6 +93,39 @@ def sync():
         pull()
     else:
         logging.debug("In sync")
+
+
+def in_progress_operation():
+    """
+    Return the name of an in-progress git operation that can leave conflict
+    markers in the working tree, or None if the repository is in a normal state.
+
+    `git status --porcelain` reports a conflicted file as dirty, so without this
+    check a failed rebase leads straight to `git add .` staging the markers and
+    committing them.
+    """
+
+    result = subprocess.run(
+        ["git", "rev-parse", "--absolute-git-dir"],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    git_dir = Path(result.stdout.strip())
+
+    states = [
+        ("rebase", "rebase-merge"),
+        ("rebase", "rebase-apply"),
+        ("merge", "MERGE_HEAD"),
+        ("cherry-pick", "CHERRY_PICK_HEAD"),
+        ("revert", "REVERT_HEAD"),
+    ]
+    for name, entry in states:
+        if (git_dir / entry).exists():
+            logging.debug(f"Found an in-progress {name} at {git_dir / entry}")
+            return name
+
+    return None
 
 
 def is_local_dirty():
@@ -173,7 +219,7 @@ def pull():
     """Pull changes from remote and rebase."""
 
     logging.debug("Pulling from remote")
-    subprocess.run(["git", "pull", "--rebase=True"])
+    subprocess.run(["git", "pull", "--rebase=True"], check=True)
     logging.debug("Pull completed")
 
 
