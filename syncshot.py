@@ -29,13 +29,18 @@ MAX_PAUSE_SECONDS = 3600
 # outright stops blocking syncing within this many seconds instead of lingering.
 HOLD_LEASE_SECONDS = 30
 
+# What is currently stopping syncing, if anything. Held between ticks so that a
+# pause or a stuck rebase is reported once when it starts and once when it ends,
+# rather than every period for as long as it lasts.
+blocked_by = None
+
 
 def main(period):
     setup_signal_handlers()
     logging.info("Syncshot is running")
 
     while not shutdown_requested:
-        logging.info("Syncing...")
+        logging.debug("Syncing...")
         try:
             sync()
         except subprocess.CalledProcessError as e:
@@ -47,7 +52,7 @@ def main(period):
         if shutdown_requested:
             break
 
-        logging.info("Done")
+        logging.debug("Done")
         logging.debug(f"Sleeping {period}")
 
         sleep_remaining = period
@@ -96,24 +101,32 @@ def sync():
     if leases:
         deadline, owner = leases[0]
         remaining = int(deadline - time.time())
-        logging.info(
+        report_blocked(
+            "paused",
             f"Paused, {remaining}s remaining (held by {owner}). "
-            f"Run `syncshot.py resume` to sync now."
+            f"Run `syncshot.py resume` to sync now.",
         )
         return
 
     operation = in_progress_operation()
     if operation is not None:
-        logging.error(
-            f"A {operation} is in progress, so this sync was skipped. "
-            "Staging now would commit conflict markers. Resolve it by hand "
-            "and syncshot will pick up again on its own."
+        report_blocked(
+            f"blocked by a {operation}",
+            f"A {operation} is in progress, so syncing is on hold. Staging now "
+            "would commit conflict markers. Resolve it by hand and syncshot "
+            "will pick up again on its own.",
+            level=logging.ERROR,
         )
         return
 
-    while is_local_dirty():
+    report_unblocked()
+
+    while True:
+        changes = local_changes()
+        if not changes:
+            break
         stage_local_changes()
-        commit_local_changes()
+        commit_local_changes(len(changes))
 
     remote = remote_status()
     if remote < 0:  # Local is ahead.
@@ -122,6 +135,34 @@ def sync():
         pull()
     else:
         logging.debug("In sync")
+
+
+def report_blocked(reason, message, level=logging.INFO):
+    """
+    Say why syncing is on hold, but only when the reason changes.
+
+    A pause or a stuck rebase lasts many periods. Logging it every time would
+    bury the thing that caused it under identical lines, which is the noise this
+    is meant to avoid, so repeats drop to debug.
+    """
+
+    global blocked_by
+
+    if blocked_by == reason:
+        logging.debug(message)
+    else:
+        logging.log(level, message)
+        blocked_by = reason
+
+
+def report_unblocked():
+    """Note that whatever was holding syncing up has cleared."""
+
+    global blocked_by
+
+    if blocked_by is not None:
+        logging.info(f"No longer {blocked_by}; syncing again")
+        blocked_by = None
 
 
 def pause_dir():
@@ -345,10 +386,10 @@ def in_progress_operation():
     return None
 
 
-def is_local_dirty():
+def local_changes():
     """
-    This will return True if git status has unstaged changes.
-    It will return False if all changes have been staged and committed.
+    The paths git reports as changed, as porcelain lines. Empty means everything
+    is staged and committed. The count is what the commit line reports.
     """
 
     logging.debug("Checking if local is dirty")
@@ -357,24 +398,30 @@ def is_local_dirty():
     )
     logging.debug(f"Git status output: {result.stdout.strip()}")
 
-    return bool(result.stdout.strip())
+    return result.stdout.strip().splitlines()
 
 
 def stage_local_changes():
     """Stage everything."""
 
     logging.debug("Staging local changes")
-    subprocess.run(["git", "add", "."], capture_output=False, check=True)
+    subprocess.run(["git", "add", "."], capture_output=True, check=True)
     logging.debug("Local changes staged")
 
 
-def commit_local_changes():
-    """Commit with timestamp as the message."""
+def commit_local_changes(count=None):
+    """Commit with timestamp as the message. A commit is worth reporting."""
 
-    logging.debug("Committing local changes")
     message = datetime.now(timezone.utc).isoformat()
-    subprocess.run(["git", "commit", "-m", message], capture_output=False, check=True)
-    logging.debug("Local changes committed")
+    result = subprocess.run(
+        ["git", "commit", "-m", message], capture_output=True, text=True, check=True
+    )
+    logging.debug(result.stdout.strip())
+
+    if count is None:
+        logging.info("Committed")
+    else:
+        logging.info(f"Committed {count} file{'' if count == 1 else 's'}")
 
 
 def remote_status():
@@ -429,15 +476,18 @@ def push():
 
     logging.debug("Pushing to remote")
     subprocess.run(["git", "push"], capture_output=True, check=True)
-    logging.debug("Push completed")
+    logging.info("Pushed to remote")
 
 
 def pull():
     """Pull changes from remote and rebase."""
 
     logging.debug("Pulling from remote")
-    subprocess.run(["git", "pull", "--rebase=True"], check=True)
-    logging.debug("Pull completed")
+    result = subprocess.run(
+        ["git", "pull", "--rebase=True"], capture_output=True, text=True, check=True
+    )
+    logging.debug(result.stdout.strip())
+    logging.info("Pulled and rebased onto remote")
 
 
 def build_parser():
@@ -512,12 +562,18 @@ if __name__ == "__main__":
 
     args = build_parser().parse_args()
     period = getattr(args, "period", 10)
-    if getattr(args, "debug", False):
-        logging.basicConfig(level=logging.DEBUG)
-    else:
-        logging.basicConfig(level=logging.INFO)
-
     command = getattr(args, "command", None)
+
+    # The daemon's output is read later, out of a file, so its lines carry a
+    # timestamp. The one-shot subcommands are read as they are typed and do not.
+    daemon = command in (None, "run")
+    logging.basicConfig(
+        level=logging.DEBUG if getattr(args, "debug", False) else logging.INFO,
+        format=(
+            "%(asctime)s %(levelname)-7s %(message)s" if daemon else "%(levelname)s: %(message)s"
+        ),
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
 
     if command == "pause":
         try:

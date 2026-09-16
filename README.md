@@ -59,4 +59,12 @@ The exit status is the command's own, so `hold` drops into a script without chan
 
 Use `pause` when there is no single command to wrap, such as an agent making a change across many steps.
 
+## Logging
+
+At the default level Syncshot logs events, not ticks: it starts, it commits, it pushes, it pulls, it says why it is on hold and when that clears, and it reports anything that fails. An idle day is one line. `--debug` adds the per-period detail, which is what the default used to be.
+
+Anything that lasts for many periods, like a pause or an unresolved rebase, is reported when it starts and when it ends rather than on every attempt. Repeats go to debug, so the event that caused it is not buried under identical lines.
+
+Daemon output carries a timestamp, since it is usually read later out of a file. The one-shot subcommands do not, since they are read as they are typed.
+
 
