@@ -1,7 +1,9 @@
 import subprocess
 import logging
 import re
+import os
 import time
+import getpass
 import argparse
 import signal
 
@@ -10,6 +12,17 @@ from pathlib import Path
 
 # Global flag for graceful shutdown
 shutdown_requested = False
+
+# A pause is a lease: a file named "<epoch deadline>.<owner>" in this directory
+# under the git dir. Syncing is paused while any unexpired lease exists. Every
+# writer only ever creates or deletes its own path, so concurrent holders cannot
+# clobber each other and no locking is needed.
+PAUSE_DIR_NAME = "syncshot-pause.d"
+
+# A lease nobody remembers is worse than the noisy commits it prevents, so every
+# lease expires and no single one can last longer than this.
+DEFAULT_PAUSE_SECONDS = 300
+MAX_PAUSE_SECONDS = 3600
 
 
 def main(period):
@@ -69,9 +82,20 @@ def sync():
         If local is ahead of remote, push changes.
         If local is behind remote, pull and rebase changes.
 
-    Does nothing at all while a rebase, merge, cherry-pick or revert is in
-    progress, because staging then would commit conflict markers.
+    Does nothing at all while a pause lease is held, or while a rebase, merge,
+    cherry-pick or revert is in progress, because staging then would commit
+    conflict markers.
     """
+
+    leases = active_leases()
+    if leases:
+        deadline, owner = leases[0]
+        remaining = int(deadline - time.time())
+        logging.info(
+            f"Paused, {remaining}s remaining (held by {owner}). "
+            f"Run `syncshot.py resume` to sync now."
+        )
+        return
 
     operation = in_progress_operation()
     if operation is not None:
@@ -93,6 +117,131 @@ def sync():
         pull()
     else:
         logging.debug("In sync")
+
+
+def pause_dir():
+    """Path to the lease directory, which lives in the git dir so that
+    `git add .` can never stage it."""
+
+    result = subprocess.run(
+        ["git", "rev-parse", "--absolute-git-dir"],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return Path(result.stdout.strip()) / PAUSE_DIR_NAME
+
+
+def parse_duration(text):
+    """Turn "20s", "5m", "1h" or a bare number of seconds into an int."""
+
+    match = re.fullmatch(r"(\d+)([smh]?)", text.strip())
+    if not match:
+        raise ValueError(f"Could not read '{text}' as a duration. Try 20s, 5m or 1h.")
+
+    amount = int(match.group(1))
+    multiplier = {"": 1, "s": 1, "m": 60, "h": 3600}[match.group(2)]
+    seconds = amount * multiplier
+    if seconds <= 0:
+        raise ValueError("Duration must be greater than zero.")
+
+    return seconds
+
+
+def resolve_owner(owner=None):
+    """Who holds a lease: an explicit name, else $SYNCSHOT_OWNER, else the user."""
+
+    name = owner or os.environ.get("SYNCSHOT_OWNER") or getpass.getuser()
+
+    return re.sub(r"[^A-Za-z0-9_-]", "-", name)
+
+
+def active_leases():
+    """
+    Return [(deadline, owner)] for unexpired leases, soonest deadline first,
+    deleting any that have expired on the way past.
+    """
+
+    directory = pause_dir()
+    if not directory.is_dir():
+        return []
+
+    now = time.time()
+    leases = []
+    for entry in directory.iterdir():
+        deadline_text, _, owner = entry.name.partition(".")
+        try:
+            deadline = int(deadline_text)
+        except ValueError:
+            logging.debug(f"Ignoring unrecognised file in pause dir: {entry.name}")
+            continue
+
+        if deadline <= now:
+            logging.debug(f"Sweeping expired lease {entry.name}")
+            entry.unlink(missing_ok=True)
+        else:
+            leases.append((deadline, owner))
+
+    return sorted(leases)
+
+
+def acquire_lease(seconds, owner=None):
+    """Take a pause lease, replacing any this owner already holds."""
+
+    owner = resolve_owner(owner)
+    if seconds > MAX_PAUSE_SECONDS:
+        print(f"Capping pause at {MAX_PAUSE_SECONDS}s (asked for {seconds}s).")
+        seconds = MAX_PAUSE_SECONDS
+
+    directory = pause_dir()
+    directory.mkdir(exist_ok=True)
+    release_lease(owner, announce=False)
+
+    deadline = int(time.time()) + seconds
+    (directory / f"{deadline}.{owner}").touch()
+
+    return deadline, owner, seconds
+
+
+def release_lease(owner=None, release_all=False, announce=True):
+    """Drop this owner's leases, or everyone's with release_all."""
+
+    directory = pause_dir()
+    if not directory.is_dir():
+        if announce:
+            print("Not paused.")
+        return 0
+
+    owner = resolve_owner(owner)
+    removed = 0
+    for entry in directory.iterdir():
+        _, _, entry_owner = entry.name.partition(".")
+        if release_all or entry_owner == owner:
+            entry.unlink(missing_ok=True)
+            removed += 1
+
+    if announce:
+        if removed:
+            print(f"Released {removed} lease(s). Syncing resumes on the next tick.")
+        else:
+            print(f"No leases held by {owner}. Use --all to release every holder.")
+
+    return removed
+
+
+def print_status():
+    """Report whether syncing is paused and by whom."""
+
+    leases = active_leases()
+    if not leases:
+        print("Not paused.")
+        return
+
+    now = time.time()
+    print(f"Paused by {len(leases)} lease(s):")
+    for deadline, owner in leases:
+        clock = datetime.fromtimestamp(deadline).strftime("%H:%M:%S")
+        print(f"  {owner:<24} until {clock} ({int(deadline - now)}s remaining)")
 
 
 def in_progress_operation():
@@ -223,34 +372,87 @@ def pull():
     logging.debug("Pull completed")
 
 
+def build_parser():
+    """
+    Bare `syncshot.py` still runs the daemon, so the subcommand is optional and
+    `run` is only an explicit alias for it.
+    """
+
+    common = argparse.ArgumentParser(add_help=False)
+    common.add_argument(
+        "--period",
+        type=int,
+        default=argparse.SUPPRESS,
+        help="Time in seconds between sync attempts (default: 10)",
+    )
+    common.add_argument(
+        "--debug",
+        action="store_true",
+        default=argparse.SUPPRESS,
+        help="Enable debug logging",
+    )
+
+    parser = argparse.ArgumentParser(
+        description="Syncshot: Keep your git repository in sync.",
+        parents=[common],
+    )
+    subparsers = parser.add_subparsers(dest="command")
+    subparsers.add_parser(
+        "run", parents=[common], help="Run the sync loop (the default)"
+    )
+
+    pause = subparsers.add_parser(
+        "pause", help="Hold off syncing while you make a big change"
+    )
+    pause.add_argument(
+        "duration",
+        nargs="?",
+        default=f"{DEFAULT_PAUSE_SECONDS}s",
+        help=f"How long to pause: 20s, 5m, 1h (default: {DEFAULT_PAUSE_SECONDS}s)",
+    )
+    pause.add_argument("--owner", help="Name this lease (default: $SYNCSHOT_OWNER)")
+
+    resume = subparsers.add_parser("resume", help="Release your pause and sync again")
+    resume.add_argument("--owner", help="Whose lease to release")
+    resume.add_argument(
+        "--all", action="store_true", help="Release every holder's lease, not just yours"
+    )
+
+    subparsers.add_parser("status", help="Show whether syncing is paused, and by whom")
+
+    return parser
+
+
 if __name__ == "__main__":
     """
     Main entry point for the script.
     Processes arguments and starts the sync process by calling `main`.
     """
 
-    parser = argparse.ArgumentParser(
-        description="Syncshot: Keep your git repository in sync."
-    )
-    parser.add_argument(
-        "--period",
-        type=int,
-        default=10,
-        help="Time in seconds between sync attempts (default: 10)",
-    )
-    parser.add_argument(
-        "--debug",
-        action="store_true",
-        help="Enable debug logging",
-    )
-    args = parser.parse_args()
-    period = args.period
-    if args.debug:
+    args = build_parser().parse_args()
+    period = getattr(args, "period", 10)
+    if getattr(args, "debug", False):
         logging.basicConfig(level=logging.DEBUG)
     else:
         logging.basicConfig(level=logging.INFO)
-    if period <= 0:
-        logging.error("Period must be a positive integer")
-        exit(1)
 
-    main(period)
+    command = getattr(args, "command", None)
+
+    if command == "pause":
+        try:
+            seconds = parse_duration(args.duration)
+        except ValueError as e:
+            logging.error(e)
+            exit(1)
+        deadline, owner, seconds = acquire_lease(seconds, args.owner)
+        clock = datetime.fromtimestamp(deadline).strftime("%H:%M:%S")
+        print(f"Paused for {seconds}s, until {clock} (held by {owner}).")
+    elif command == "resume":
+        release_lease(args.owner, release_all=args.all)
+    elif command == "status":
+        print_status()
+    else:
+        if period <= 0:
+            logging.error("Period must be a positive integer")
+            exit(1)
+        main(period)
