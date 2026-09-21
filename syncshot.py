@@ -29,6 +29,14 @@ MAX_PAUSE_SECONDS = 3600
 # outright stops blocking syncing within this many seconds instead of lingering.
 HOLD_LEASE_SECONDS = 30
 
+# Git waits forever on a connection that died without a reset, which is what a
+# machine that slept mid-fetch leaves behind. The loop is single threaded, so one
+# such call stops syncing altogether until somebody notices it is stale. Every
+# call that talks to the remote gets a deadline, and ssh gets keepalives so that
+# it usually gives up on its own well before the deadline has to kill anything.
+NETWORK_TIMEOUT_SECONDS = 120
+SSH_KEEPALIVE = "-o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=3"
+
 # What is currently stopping syncing, if anything. Held between ticks so that a
 # pause or a stuck rebase is reported once when it starts and once when it ends,
 # rather than every period for as long as it lasts.
@@ -43,6 +51,12 @@ def main(period):
         logging.debug("Syncing...")
         try:
             sync()
+        except subprocess.TimeoutExpired as e:
+            command = " ".join(e.cmd) if isinstance(e.cmd, list) else str(e.cmd)
+            logging.error(
+                f"`{command}` hung for {round(e.timeout)}s and was killed. "
+                "Continuing to next sync attempt"
+            )
         except subprocess.CalledProcessError as e:
             logging.error(f"An error occurred while syncing: {e}")
             logging.debug(f"Command output: {e.output}")
@@ -424,11 +438,66 @@ def commit_local_changes(count=None):
         logging.info(f"Committed {count} file{'' if count == 1 else 's'}")
 
 
+def network_env():
+    """
+    The environment for a git call that reaches the remote. ssh only notices a
+    dead peer if it is asked to, so keepalives turn a silent hang into an
+    ordinary non-zero exit, which the loop already knows how to report and retry.
+    Whatever is already in GIT_SSH_COMMAND is kept and extended, not replaced.
+    """
+
+    env = os.environ.copy()
+    env["GIT_SSH_COMMAND"] = f"{env.get('GIT_SSH_COMMAND', 'ssh')} {SSH_KEEPALIVE}"
+    return env
+
+
+def run_network_git(args, capture_output=False):
+    """
+    Run a git command that reaches the remote, under a deadline, and make sure it
+    is really gone if the deadline has to be enforced. Killing the timed out
+    command only kills git itself, which leaves the ssh it spawned holding the
+    dead socket and one stray process behind per attempt, so the command gets its
+    own session and the whole group is killed together.
+
+    Raises the same exceptions a checked subprocess.run would, so callers and the
+    sync loop see no difference between this and any other git call.
+    """
+
+    pipe = subprocess.PIPE if capture_output else None
+    process = subprocess.Popen(
+        args,
+        stdout=pipe,
+        stderr=pipe,
+        text=True,
+        env=network_env(),
+        start_new_session=True,
+    )
+
+    try:
+        stdout, stderr = process.communicate(timeout=NETWORK_TIMEOUT_SECONDS)
+    except subprocess.TimeoutExpired:
+        try:
+            os.killpg(os.getpgid(process.pid), signal.SIGKILL)
+        except (ProcessLookupError, PermissionError):
+            process.kill()
+        stdout, stderr = process.communicate()
+        raise subprocess.TimeoutExpired(
+            args, NETWORK_TIMEOUT_SECONDS, output=stdout, stderr=stderr
+        )
+
+    if process.returncode != 0:
+        raise subprocess.CalledProcessError(
+            process.returncode, args, output=stdout, stderr=stderr
+        )
+
+    return subprocess.CompletedProcess(args, process.returncode, stdout, stderr)
+
+
 def remote_status():
     """Comprare local branch to remote branch to see if local is ahead or behind."""
 
     logging.debug("Checking remote status")
-    subprocess.run(["git", "fetch"], check=True)
+    run_network_git(["git", "fetch"])
     result = subprocess.run(
         ["git", "status", "-b", "--porcelain=v1"],
         capture_output=True,
@@ -475,7 +544,7 @@ def push():
     """Push local changes to remote."""
 
     logging.debug("Pushing to remote")
-    subprocess.run(["git", "push"], capture_output=True, check=True)
+    run_network_git(["git", "push"], capture_output=True)
     logging.info("Pushed to remote")
 
 
@@ -483,9 +552,7 @@ def pull():
     """Pull changes from remote and rebase."""
 
     logging.debug("Pulling from remote")
-    result = subprocess.run(
-        ["git", "pull", "--rebase=True"], capture_output=True, text=True, check=True
-    )
+    result = run_network_git(["git", "pull", "--rebase=True"], capture_output=True)
     logging.debug(result.stdout.strip())
     logging.info("Pulled and rebased onto remote")
 
