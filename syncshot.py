@@ -443,11 +443,19 @@ def network_env():
     The environment for a git call that reaches the remote. ssh only notices a
     dead peer if it is asked to, so keepalives turn a silent hang into an
     ordinary non-zero exit, which the loop already knows how to report and retry.
-    Whatever is already in GIT_SSH_COMMAND is kept and extended, not replaced.
+    The ssh command being extended is the one git would have used, in git's own
+    order: GIT_SSH_COMMAND, then core.sshCommand, then plain ssh. Setting
+    GIT_SSH_COMMAND overrides core.sshCommand, so starting from a bare `ssh`
+    would silently drop the repo's dedicated key and send every fetch to the
+    ssh agent instead (that happened from 2026-09-28 until this was fixed).
     """
 
     env = os.environ.copy()
-    env["GIT_SSH_COMMAND"] = f"{env.get('GIT_SSH_COMMAND', 'ssh')} {SSH_KEEPALIVE}"
+    base = env.get("GIT_SSH_COMMAND")
+    if not base:
+        configured = subprocess.run(["git", "config", "--get", "core.sshCommand"], capture_output=True, text=True)
+        base = configured.stdout.strip() if configured.returncode == 0 else ""
+    env["GIT_SSH_COMMAND"] = f"{base or 'ssh'} {SSH_KEEPALIVE}"
     return env
 
 
