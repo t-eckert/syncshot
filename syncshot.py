@@ -7,6 +7,7 @@ import time
 import getpass
 import argparse
 import signal
+import fcntl
 
 from datetime import datetime, timezone
 from pathlib import Path
@@ -29,6 +30,13 @@ MAX_PAUSE_SECONDS = 3600
 # outright stops blocking syncing within this many seconds instead of lingering.
 HOLD_LEASE_SECONDS = 30
 
+# The loop holds an exclusive lock on this file, in the git dir, for the whole of
+# each sync. A sync that checked for leases a moment before one was taken would
+# otherwise carry on and `git add .` whatever the new holder writes. Taking a
+# lease waits for this lock, so once a lease is held, no sync is in flight.
+TICK_LOCK_NAME = "syncshot-tick.lock"
+TICK_LOCK_WAIT_SECONDS = 180
+
 # Git waits forever on a connection that died without a reset, which is what a
 # machine that slept mid-fetch leaves behind. The loop is single threaded, so one
 # such call stops syncing altogether until somebody notices it is stale. Every
@@ -50,7 +58,8 @@ def main(period):
     while not shutdown_requested:
         logging.debug("Syncing...")
         try:
-            sync()
+            with tick_lock():
+                sync()
         except subprocess.TimeoutExpired as e:
             command = " ".join(e.cmd) if isinstance(e.cmd, list) else str(e.cmd)
             logging.error(
@@ -179,17 +188,58 @@ def report_unblocked():
         blocked_by = None
 
 
-def pause_dir():
-    """Path to the lease directory, which lives in the git dir so that
-    `git add .` can never stage it."""
+class tick_lock:
+    """
+    Held by the loop for the whole of each sync, and briefly by anyone taking a
+    lease, so that a lease is never in force while a sync that missed it runs on.
 
+    An fcntl lock is released by the operating system when its holder dies, so a
+    crashed loop never leaves it stuck.
+    """
+
+    def __init__(self, wait=None):
+        self.wait = wait
+        self.handle = None
+
+    def __enter__(self):
+        path = git_dir() / TICK_LOCK_NAME
+        self.handle = open(path, "a")
+        if self.wait is None:
+            fcntl.flock(self.handle, fcntl.LOCK_EX)
+            return self
+        deadline = time.time() + self.wait
+        while True:
+            try:
+                fcntl.flock(self.handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                return self
+            except BlockingIOError:
+                if time.time() >= deadline:
+                    self.handle.close()
+                    raise TimeoutError(
+                        f"A sync was still running after {self.wait}s; try again"
+                    )
+                time.sleep(0.2)
+
+    def __exit__(self, *_):
+        fcntl.flock(self.handle, fcntl.LOCK_UN)
+        self.handle.close()
+
+
+def git_dir():
     result = subprocess.run(
         ["git", "rev-parse", "--absolute-git-dir"],
         capture_output=True,
         text=True,
         check=True,
     )
-    return Path(result.stdout.strip()) / PAUSE_DIR_NAME
+    return Path(result.stdout.strip())
+
+
+def pause_dir():
+    """Path to the lease directory, which lives in the git dir so that
+    `git add .` can never stage it."""
+
+    return git_dir() / PAUSE_DIR_NAME
 
 
 def parse_duration(text):
@@ -274,6 +324,11 @@ def acquire_lease(seconds, owner=None):
         if entry_owner == owner and entry != lease:
             entry.unlink(missing_ok=True)
 
+    # A sync that started before the lease existed may still be running. Wait
+    # for it, so that when this returns nothing will stage what the holder writes.
+    with tick_lock(wait=TICK_LOCK_WAIT_SECONDS):
+        pass
+
     return deadline, owner, seconds
 
 
@@ -352,6 +407,58 @@ def run_held(command, owner=None):
     return returncode
 
 
+def commit_as(author, paths, message=None, owner=None):
+    """
+    Commit exactly these paths as another writer, such as an agent, so that
+    `git blame` credits it with the lines it added. The committer stays whoever
+    this repository is configured as; only the author changes.
+
+    The writer must hold a pause from before it writes until after this returns,
+    or a sync could commit its change under the default identity first. This
+    takes its own lease as well, so no sync runs during the commit itself.
+    Nothing else that is changed or staged is included. It does not push: the
+    loop pushes on its next tick.
+    """
+
+    if not re.fullmatch(r"[^<>]+ <[^<>\s]+>", author):
+        logging.error(f"--author must look like 'Name <email>', got '{author}'")
+        return 2
+    if not paths:
+        logging.error("Name the paths to commit after --")
+        return 2
+
+    operation = in_progress_operation()
+    if operation is not None:
+        logging.error(f"A {operation} is in progress; resolve it before committing")
+        return 1
+
+    # Its own lease, under its own name, so that releasing it at the end never
+    # drops the pause the writer is holding around its write.
+    owner = resolve_owner(owner) + "-commit"
+    acquire_lease(HOLD_LEASE_SECONDS, owner)
+    try:
+        subprocess.run(["git", "add", "--all", "--", *paths], capture_output=True, text=True, check=True)
+        staged = subprocess.run(
+            ["git", "diff", "--cached", "--name-only", "--", *paths],
+            capture_output=True, text=True, check=True,
+        ).stdout.split()
+        if not staged:
+            print("Nothing to commit for those paths.")
+            return 0
+        message = message or datetime.now(timezone.utc).isoformat()
+        subprocess.run(
+            ["git", "commit", f"--author={author}", "-m", message, "--only", "--", *paths],
+            capture_output=True, text=True, check=True,
+        )
+        print(f"Committed {len(staged)} file{'' if len(staged) == 1 else 's'} as {author}.")
+        return 0
+    except subprocess.CalledProcessError as e:
+        logging.error(f"git failed: {(e.stderr or e.stdout or '').strip()}")
+        return 1
+    finally:
+        release_lease(owner, announce=False)
+
+
 def print_status():
     """Report whether syncing is paused and by whom."""
 
@@ -377,13 +484,7 @@ def in_progress_operation():
     committing them.
     """
 
-    result = subprocess.run(
-        ["git", "rev-parse", "--absolute-git-dir"],
-        capture_output=True,
-        text=True,
-        check=True,
-    )
-    git_dir = Path(result.stdout.strip())
+    directory = git_dir()
 
     states = [
         ("rebase", "rebase-merge"),
@@ -393,8 +494,8 @@ def in_progress_operation():
         ("revert", "REVERT_HEAD"),
     ]
     for name, entry in states:
-        if (git_dir / entry).exists():
-            logging.debug(f"Found an in-progress {name} at {git_dir / entry}")
+        if (directory / entry).exists():
+            logging.debug(f"Found an in-progress {name} at {directory / entry}")
             return name
 
     return None
@@ -626,6 +727,16 @@ def build_parser():
 
     subparsers.add_parser("status", help="Show whether syncing is paused, and by whom")
 
+    commit = subparsers.add_parser(
+        "commit", help="Commit exactly these paths as another writer, such as an agent"
+    )
+    commit.add_argument("--author", required=True, help="Who wrote it: 'Name <email>'")
+    commit.add_argument("--message", "-m", help="Commit message (default: the time)")
+    commit.add_argument("--owner", help="Name this lease (default: $SYNCSHOT_OWNER)")
+    commit.add_argument(
+        "paths", nargs=argparse.REMAINDER, help="-- followed by the paths to commit"
+    )
+
     return parser
 
 
@@ -671,6 +782,11 @@ if __name__ == "__main__":
         exit(run_held(argv, args.owner))
     elif command == "status":
         print_status()
+    elif command == "commit":
+        paths = args.paths
+        if paths and paths[0] == "--":
+            paths = paths[1:]
+        exit(commit_as(args.author, paths, args.message, args.owner))
     else:
         if period <= 0:
             logging.error("Period must be a positive integer")

@@ -59,6 +59,21 @@ The exit status is the command's own, so `hold` drops into a script without chan
 
 Use `pause` when there is no single command to wrap, such as an agent making a change across many steps.
 
+## Committing as another writer
+
+Everything Syncshot commits is authored by whoever the repository is configured as. When an agent edits a file a person also writes in, that hides which lines are whose. `commit` commits exactly the paths you name, authored by another writer, so `git blame` credits it line by line:
+
+```sh
+python3 syncshot.py pause 1m --owner notebook-door
+# ...write the files...
+python3 syncshot.py commit --owner notebook-door --author "stet <stet@agents>" -m "Update the digest" -- "Reports/Digest.md"
+python3 syncshot.py resume --owner notebook-door
+```
+
+Hold a pause from before you write until after `commit` returns. Otherwise a sync can commit your change under the default identity first. Only the author changes; the committer stays the repository's configured identity. Nothing else that is changed or staged goes into the commit, and it is not pushed until the loop's next tick.
+
+The loop holds a lock in the git dir for the whole of each sync, and taking a lease waits for it. So once `pause`, `hold` or `commit` has its lease, no sync that missed the lease is still running.
+
 ## Logging
 
 At the default level Syncshot logs events, not ticks: it starts, it commits, it pushes, it pulls, it says why it is on hold and when that clears, and it reports anything that fails. An idle day is one line. `--debug` adds the per-period detail, which is what the default used to be.
